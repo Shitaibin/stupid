@@ -1,75 +1,111 @@
 package infra
 
 import (
-	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/asn1"
-	"encoding/base64"
 	"encoding/pem"
 	"io/ioutil"
-	"math/big"
 
-	"github.com/hyperledger/fabric/bccsp/utils"
+	"github.com/hyperledger/fabric/bccsp"
+	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/common/crypto"
 	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/protos/msp"
+	proto_utils "github.com/hyperledger/fabric/protos/utils"
 	"github.com/pkg/errors"
 )
 
-type CryptoConfig struct {
-	MSPID      string   `json:"name"`
-	PrivKey    string   `json:"private_key"`
-	SignCert   string   `json:"sign_cert"`
-	TLSCACerts []string `json:"tls_ca_cert"`
-}
-
-type ECDSASignature struct {
-	R, S *big.Int
+type SignerConfig struct {
+	MSPID        string
+	IdentityPath string
+	KeyPath      string
+	TLSCACerts   []string
 }
 
 type Crypto struct {
+	key        bccsp.Key
 	Creator    []byte
-	PrivKey    *ecdsa.PrivateKey
-	SignCert   *x509.Certificate
 	TLSCACerts [][]byte
 }
 
-func (s *Crypto) Sign(message []byte) ([]byte, error) {
-	ri, si, err := ecdsa.Sign(rand.Reader, s.PrivKey, digest(message))
-	if err != nil {
-		return nil, err
-	}
-
-	si, _, err = utils.ToLowS(&s.PrivKey.PublicKey, si)
-	if err != nil {
-		return nil, err
-	}
-
-	return asn1.Marshal(ECDSASignature{ri, si})
-}
-
-func (s *Crypto) Serialize() ([]byte, error) {
-	return s.Creator, nil
-}
-
-func (s *Crypto) NewSignatureHeader() (*common.SignatureHeader, error) {
-	creator, err := s.Serialize()
-	if err != nil {
-		return nil, err
-	}
+func (si *Crypto) NewSignatureHeader() (*common.SignatureHeader, error) {
 	nonce, err := crypto.GetRandomNonce()
 	if err != nil {
 		return nil, err
 	}
-
 	return &common.SignatureHeader{
-		Creator: creator,
+		Creator: si.Creator,
 		Nonce:   nonce,
 	}, nil
 }
 
-func GetTLSCACerts(files []string) ([][]byte, error) {
+func (si *Crypto) Serialize() ([]byte, error) {
+	return si.Creator, nil
+}
+
+// NewSigner creates a new Signer out of the given configuration
+func NewCrypto(conf SignerConfig) (*Crypto, error) {
+	sId, err := serializeIdentity(conf.IdentityPath, conf.MSPID)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	key, err := loadPrivateKey(conf.KeyPath)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	tlsCerts, err := getTLSCACerts(conf.TLSCACerts)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return &Crypto{
+		Creator:    sId,
+		key:        key,
+		TLSCACerts: tlsCerts,
+	}, nil
+}
+
+func (si *Crypto) Sign(msg []byte) ([]byte, error) {
+	if len(msg) == 0 {
+		return nil, errors.New("msg (to sign) required")
+	}
+	digest, err := factory.GetDefault().Hash(msg, &bccsp.SHA256Opts{})
+	if err != nil {
+		return nil, err
+	}
+	signature, err := factory.GetDefault().Sign(si.key, digest, nil)
+	if err != nil {
+		return nil, err
+	}
+	return signature, nil
+}
+
+func serializeIdentity(clientCert string, mspID string) ([]byte, error) {
+	b, err := ioutil.ReadFile(clientCert)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	sId := &msp.SerializedIdentity{
+		Mspid:   mspID,
+		IdBytes: b,
+	}
+	return proto_utils.MarshalOrPanic(sId), nil
+}
+
+func loadPrivateKey(file string) (bccsp.Key, error) {
+	b, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	bl, _ := pem.Decode(b)
+	if bl == nil {
+		return nil, errors.Errorf("failed to decode PEM block from %s", file)
+	}
+	key, err := factory.GetDefault().KeyImport(bl.Bytes, &bccsp.ECDSAPrivateKeyImportOpts{true})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse private key from %s", file)
+	}
+	return key, nil
+}
+
+func getTLSCACerts(files []string) ([][]byte, error) {
 	var certs [][]byte
 	for _, f := range files {
 		in, err := ioutil.ReadFile(f)
@@ -81,50 +117,4 @@ func GetTLSCACerts(files []string) ([][]byte, error) {
 	}
 
 	return certs, nil
-}
-
-func digest(in []byte) []byte {
-	h := sha256.New()
-	h.Write(in)
-	return h.Sum(nil)
-}
-
-func toPEM(in []byte) ([]byte, error) {
-	d := make([]byte, base64.StdEncoding.DecodedLen(len(in)))
-	n, err := base64.StdEncoding.Decode(d, in)
-	if err != nil {
-		return nil, err
-	}
-	return d[:n], nil
-}
-
-func GetPrivateKey(f string) (*ecdsa.PrivateKey, error) {
-	in, err := ioutil.ReadFile(f)
-	if err != nil {
-		return nil, err
-	}
-
-	k, err := utils.PEMtoPrivateKey(in, []byte{})
-	if err != nil {
-		return nil, err
-	}
-
-	key, ok := k.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, errors.Errorf("expecting ecdsa key")
-	}
-
-	return key, nil
-}
-
-func GetCertificate(f string) (*x509.Certificate, []byte, error) {
-	in, err := ioutil.ReadFile(f)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	block, _ := pem.Decode(in)
-
-	c, err := x509.ParseCertificate(block.Bytes)
-	return c, in, err
 }

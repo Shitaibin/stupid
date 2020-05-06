@@ -3,9 +3,6 @@ package infra
 import (
 	"encoding/json"
 	"io/ioutil"
-
-	"github.com/gogo/protobuf/proto"
-	"github.com/hyperledger/fabric/protos/msp"
 )
 
 type Config struct {
@@ -20,6 +17,9 @@ type Config struct {
 	TLSCACerts    []string `json:"tls_ca_certs"`
 	NumOfConn     int      `json:"num_of_conn"`
 	ClientPerConn int      `json:"client_per_conn"`
+	X509Plugin    string   `json:"x509_plugin"`
+	Bccsp         string   `json:"bccsp"`
+	GmPlugin      string   `json:"gm_plugin"`
 }
 
 func LoadConfig(f string) Config {
@@ -27,7 +27,6 @@ func LoadConfig(f string) Config {
 	if err != nil {
 		panic(err)
 	}
-
 	config := Config{}
 	if err = json.Unmarshal(raw, &config); err != nil {
 		panic(err)
@@ -36,43 +35,16 @@ func LoadConfig(f string) Config {
 	return config
 }
 
-func (c Config) LoadCrypto() *Crypto {
-	conf := CryptoConfig{
-		MSPID:      c.MSPID,
-		PrivKey:    c.PrivateKey,
-		SignCert:   c.SignCert,
-		TLSCACerts: c.TLSCACerts,
+func (c Config) LoadCrypto() (*Crypto, error) {
+	conf := SignerConfig{
+		MSPID:        c.MSPID,
+		KeyPath:      c.PrivateKey,
+		IdentityPath: c.SignCert,
+		TLSCACerts:   c.TLSCACerts,
 	}
-
-	priv, err := GetPrivateKey(conf.PrivKey)
+	crypto, err := NewCrypto(conf)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-
-	cert, certBytes, err := GetCertificate(conf.SignCert)
-	if err != nil {
-		panic(err)
-	}
-
-	id := &msp.SerializedIdentity{
-		Mspid:   conf.MSPID,
-		IdBytes: certBytes,
-	}
-
-	name, err := proto.Marshal(id)
-	if err != nil {
-		panic(err)
-	}
-
-	certs, err := GetTLSCACerts(conf.TLSCACerts)
-	if err != nil {
-		panic(err)
-	}
-
-	return &Crypto{
-		Creator:    name,
-		PrivKey:    priv,
-		SignCert:   cert,
-		TLSCACerts: certs,
-	}
+	return crypto, nil
 }
