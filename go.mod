@@ -22,4 +22,4 @@ require (
 	gopkg.in/jcmturner/goidentity.v3 v3.0.0 // indirect
 )
 
-replace github.com/hyperledger/fabric v1.4.3 => 192.168.9.251/hyperledger/fabric v1.4.6-alpha1-1-yx.0.20200430060154-44829238b289
+replace github.com/hyperledger/fabric v1.4.3 => 192.168.9.251/hyperledger/fabric 44829238b289
