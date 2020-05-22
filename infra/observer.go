@@ -38,7 +38,7 @@ func CreateObserver(addr, channel string, crypto *Crypto) *Observer {
 
 func (o *Observer) Start(N int, now time.Time) {
 	defer close(o.signal)
-
+	fmt.Printf("observer.start: %v\n", now.UTC())
 	n := 0
 	for n < N {
 		r, err := o.d.Recv()

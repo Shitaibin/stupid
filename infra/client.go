@@ -7,6 +7,7 @@ import (
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protos/peer"
+	"github.com/pkg/errors"
 )
 
 func CreateGRPCClient(certs [][]byte) (*comm.GRPCClient, error) {
@@ -33,12 +34,12 @@ func CreateGRPCClient(certs [][]byte) (*comm.GRPCClient, error) {
 func CreateEndorserClient(addr string, tlscacerts [][]byte) (peer.EndorserClient, error) {
 	gRPCClient, err := CreateGRPCClient(tlscacerts)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "CreateEndorserClient:CreateGRPCClient")
 	}
 
 	conn, err := gRPCClient.NewConnection(addr, "")
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "CreateEndorserClient:NewConnection")
 	}
 
 	return peer.NewEndorserClient(conn), nil
@@ -47,12 +48,12 @@ func CreateEndorserClient(addr string, tlscacerts [][]byte) (peer.EndorserClient
 func CreateBroadcastClient(addr string, tlscacerts [][]byte) (orderer.AtomicBroadcast_BroadcastClient, error) {
 	gRPCClient, err := CreateGRPCClient(tlscacerts)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "CreateBroadcastClient:CreateGRPCClient")
 	}
 
 	conn, err := gRPCClient.NewConnection(addr, "")
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "CreateBroadcastClient:NewConnection")
 	}
 
 	return orderer.NewAtomicBroadcastClient(conn).Broadcast(context.Background())

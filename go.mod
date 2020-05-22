@@ -23,3 +23,5 @@ require (
 )
 
 replace github.com/hyperledger/fabric v1.4.3 => 121.40.145.42/credit_asset_blockchain_platform/fabric v1.4.6-alpha2-yx
+
+replace github.com/tjfoc/gmsm v1.3.0 => 121.40.145.42/hyperledger/gmsm v1.3.0-yx

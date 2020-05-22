@@ -67,6 +67,7 @@ func main() {
 
 	start := time.Now()
 	go observer.Start(N, start)
+	fmt.Printf("main start: %v\n", start.UTC())
 
 	for i := 0; i < N; i++ {
 		prop := infra.CreateProposal(
@@ -82,6 +83,7 @@ func main() {
 	duration := time.Since(start)
 	close(done)
 
+	fmt.Printf("end: %v", time.Now().UTC())
 	fmt.Printf("tx: %d, duration: %+v, tps: %f\n", N, duration, float64(N)/duration.Seconds())
 	os.Exit(0)
 }
